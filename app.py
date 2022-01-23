@@ -3,49 +3,97 @@ from flask import Flask
 from flask import request
 from flask import jsonify
 from scipy.optimize import linprog
-
-# TODO:
-# [] Plot a plan
+from pulp import LpMaximize, LpProblem, LpStatus, lpSum, LpVariable, LpMinimize
 
 app = Flask(__name__)
 
 
-@app.route('/')
-def hello_world():
-    return 'This is a prototype for Flask-Api-Request!'
+# ================================== Maximization LP ================================
+
+@app.route('/solve_max', methods=['POST', 'GET'])
+def maximize_problem_solve():
+    # Define the model
+    model = LpProblem(name="resource-allocation", sense=LpMaximize)
+
+    # Define the decision variables
+    x = {i: LpVariable(name=f"x{i}", lowBound=0) for i in range(1, 5)}
+
+    # Add constraints
+    model += (lpSum(x.values()) <= 50, "manpower")
+    model += (3 * x[1] + 2 * x[2] + x[3] <= 100, "material_a")
+    model += (x[2] + 2 * x[3] + 3 * x[4] <= 90, "material_b")
+
+    # Set the objective
+    model += 20 * x[1] + 12 * x[2] + 40 * x[3] + 25 * x[4]
+
+    # Solve the optimization problem
+    status = model.solve()
+
+    # Get the results
+    print(f"status: {model.status}, {LpStatus[model.status]}")
+    print(f"objective: {model.objective.value()}")
+
+    variables = {}
+    constants = {}
+
+    for var in x.values():
+        print(f"{var.name}: {var.value()}")
+        variables[str(var.name)] = var.value()
+
+    for name, constraint in model.constraints.items():
+        print(f"{name}: {constraint.value()}")
+        constants[str(name)] = constraint.value()
+
+    print(variables)
+    print(constants)
+
+    return {"status": str(model.status) + ", " + str(LpStatus[model.status]),
+            "optimum-value": model.objective.value(),
+            "variables-opt-value": variables,
+            "constants-value": constants}
 
 
-@app.route('/solve', methods=['POST', 'GET'])
-def user():
-    if request.method == 'POST':
-        """
-        Minimize          w = 10 * y1 + 15 * y2 + 25 * y3
-        Subject to:       y1 + y2 + y3 >= 1000
-                          y1 - 2 * y2    >= 0
-                                      y3 >= 340
-        with              y1             >= 0
-                                y2       >= 0
-        """
+# ================================== Minimization LP ================================
 
-        """
-        A = request.args.get('A')
-        b = request.args.get('b')
-        c = request.args.get('c')
-        """
+@app.route('/solve_min', methods=['POST', 'GET'])
+def minimize_problem_solve():
+    # Initialize Class
+    model = LpProblem("Minimize Staffing", LpMinimize)
+    days = list(range(7))
+    # Define Decision Variables
+    x = LpVariable.dicts('staff_', days, lowBound=0, cat='Integer')
+    # Def1ine Objective
+    model += lpSum([x[i] for i in days])
+    model += (x[0] + x[3] + x[4] + x[5] + x[6] >= 11, "C1")
+    model += (x[0] + x[1] + x[4] + x[5] + x[6] >= 14, "C2")
+    model += (x[0] + x[1] + x[2] + x[5] + x[6] >= 23, "C3")
+    model += (x[0] + x[1] + x[2] + x[3] + x[6] >= 21, "C4")
+    model += (x[0] + x[1] + x[2] + x[3] + x[4] >= 20, "C5")
+    model += (x[1] + x[2] + x[3] + x[4] + x[5] >= 15, "C6")
+    model += (x[2] + x[3] + x[4] + x[5] + x[6] >= 8, "C7")
 
-        A = np.array([[-1, -1, -1],
-                      [-1, 2, 0],
-                      [0, 0, -1],
-                      [-1, 0, 0],
-                      [0, -1, 0]])
+    # Solve Model
+    model.solve()
 
-        b = np.array([-1000, 0, -340, 0, 0])
-        c = np.array([10, 15, 25])
+    # Get the results
+    print(f"status: {model.status}, {LpStatus[model.status]}")
+    print(f"objective: {model.objective.value()}")
 
-        res = linprog(c, A_ub=A, b_ub=b, bounds=(0, None))
+    variables = {}
+    constants = {}
 
-        return {"opt-val": np.around(res.fun, 3),
-                "X": list(np.around(res.x, decimals=3))}
+    for var in x.values():
+        print(f"{var.name}: {var.value()}")
+        variables[str(var.name)] = var.value()
+
+    for name, constraint in model.constraints.items():
+        print(f"{name}: {constraint.value()}")
+        constants[str(name)] = constraint.value()
+
+    return {"status": str(model.status) + ", " + str(LpStatus[model.status]),
+            "optimum-value": model.objective.value(),
+            "variables-opt-value": variables,
+            "constants-value": constants}
 
 
 if __name__ == '__main__':
